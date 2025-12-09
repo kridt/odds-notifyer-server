@@ -16,13 +16,36 @@ const FOOTBALL_BOOKMAKERS = [
   'BetOnline.ag', 'BetRivers', 'Bovada', 'Fanatics', 'Superbet', 'Bally Bet'
 ];
 
-// Football leagues to track
+// Football leagues to track (matches frontend config)
 const FOOTBALL_LEAGUES = [
+  // Top 5 + second divisions
   'england-premier-league',
-  'spain-la-liga',
+  'england-championship',
+  'england-fa-cup',
+  'spain-laliga',
+  'spain-laliga-2',
   'germany-bundesliga',
+  'germany-2-bundesliga',
   'italy-serie-a',
-  'france-ligue-1'
+  'italy-serie-b',
+  'france-ligue-1',
+  'france-ligue-2',
+  // European leagues
+  'netherlands-eredivisie',
+  'portugal-liga-portugal',
+  'belgium-pro-league',
+  'scotland-premiership',
+  'denmark-superliga',
+  'austria-bundesliga',
+  'greece-super-league',
+  // UEFA competitions
+  'international-clubs-uefa-champions-league',
+  'international-clubs-uefa-europa-league',
+  'international-clubs-uefa-conference-league',
+  // Other
+  'saudi-arabia-saudi-pro-league',
+  'brazil-brasileiro-serie-a',
+  'argentina-liga-profesional'
 ];
 
 class OddsCache {
