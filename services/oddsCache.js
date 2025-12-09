@@ -5,7 +5,7 @@ const ODDS_API_KEY = process.env.ODDS_API_KEY || '811e5fb0efa75d2b92e800cb55b60b
 const ODDS_API_BASE = process.env.ODDS_API_BASE || 'https://api2.odds-api.io/v3';
 const MAX_CALLS_PER_HOUR = parseInt(process.env.MAX_CALLS_PER_HOUR) || 5000;
 
-// Bookmakers configuration
+// Bookmakers configuration (Sporttrade removed - returns 400 errors)
 const NBA_BOOKMAKERS = [
   'Kambi', 'Bet365', 'DraftKings', 'Pinnacle', 'BetMGM', 'Caesars', 'PrizePicks', 'FanDuel',
   'BetOnline.ag', 'BetPARX', 'BetRivers', 'Bovada', 'Fanatics', 'Fliff', 'Superbet', 'Underdog', 'Bally Bet'
