@@ -1,0 +1,15 @@
+{
+  "name": "odds-notifyer-server",
+  "version": "1.0.0",
+  "description": "Centralized odds caching server for NBA and Football EV calculations",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3"
+  }
+}

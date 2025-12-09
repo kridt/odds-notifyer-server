@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: odds-notifyer-server
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3002
+      - key: ODDS_API_KEY
+        sync: false
+      - key: MAX_CALLS_PER_HOUR
+        value: 5000
+      - key: REFRESH_INTERVAL
+        value: "*/10 * * * *"
+    healthCheckPath: /health
