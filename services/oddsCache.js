@@ -1,9 +1,8 @@
 // services/oddsCache.js
-// Centralized odds caching service with rate limiting - OPTICODDS API
+// Centralized odds caching service - OPTICODDS API (no rate limits)
 
 const OPTIC_API_KEY = process.env.OPTIC_ODDS_API_KEY || '';
 const OPTIC_API_BASE = 'https://api.opticodds.com/api/v3';
-const MAX_CALLS_PER_HOUR = parseInt(process.env.MAX_CALLS_PER_HOUR) || 5000;
 
 // Bookmakers configuration
 const NBA_BOOKMAKERS = [
@@ -57,9 +56,8 @@ class OddsCache {
     this.footballEvents = {}; // { leagueSlug: events[] }
     this.footballOdds = {}; // { eventId: { bookmakers: {...} } }
 
-    // Rate limiting
-    this.apiCallsThisHour = 0;
-    this.hourStartTime = Date.now();
+    // API call counter (for logging only)
+    this.apiCallCount = 0;
 
     // Last update timestamps
     this.lastNbaEventsUpdate = null;
@@ -72,32 +70,8 @@ class OddsCache {
     this.lastError = null;
   }
 
-  // Check and reset hourly rate limit
-  checkRateLimit() {
-    const now = Date.now();
-    const hourMs = 60 * 60 * 1000;
-
-    if (now - this.hourStartTime >= hourMs) {
-      console.log(`[RateLimit] Resetting hourly counter. Used ${this.apiCallsThisHour} calls last hour.`);
-      this.apiCallsThisHour = 0;
-      this.hourStartTime = now;
-    }
-
-    return this.apiCallsThisHour < MAX_CALLS_PER_HOUR;
-  }
-
-  getRemainingCalls() {
-    this.checkRateLimit();
-    return MAX_CALLS_PER_HOUR - this.apiCallsThisHour;
-  }
-
-  // Generic fetch with rate limiting - OpticOdds uses header auth
-  async fetchWithRateLimit(url, description = '') {
-    if (!this.checkRateLimit()) {
-      console.log(`[RateLimit] Limit reached (${this.apiCallsThisHour}/${MAX_CALLS_PER_HOUR}). Skipping: ${description}`);
-      return null;
-    }
-
+  // Generic fetch - no rate limiting for OpticOdds
+  async fetchApi(url, description = '') {
     if (!OPTIC_API_KEY) {
       console.error('[API Error] OPTIC_ODDS_API_KEY not configured');
       this.lastError = { time: new Date(), message: 'API key not configured' };
@@ -105,7 +79,7 @@ class OddsCache {
     }
 
     try {
-      this.apiCallsThisHour++;
+      this.apiCallCount++;
       const response = await fetch(url, {
         headers: {
           'x-api-key': OPTIC_API_KEY,
@@ -118,7 +92,7 @@ class OddsCache {
       }
 
       const data = await response.json();
-      console.log(`[API ${this.apiCallsThisHour}/${MAX_CALLS_PER_HOUR}] ${description}`);
+      console.log(`[API #${this.apiCallCount}] ${description}`);
       return data;
     } catch (error) {
       console.error(`[API Error] ${description}: ${error.message}`);
@@ -131,7 +105,7 @@ class OddsCache {
 
   async fetchNbaEvents() {
     const url = `${OPTIC_API_BASE}/fixtures/active?league=nba`;
-    const data = await this.fetchWithRateLimit(url, 'NBA events');
+    const data = await this.fetchApi(url, 'NBA events');
 
     if (data && data.data && Array.isArray(data.data)) {
       // Transform to consistent format
@@ -156,7 +130,7 @@ class OddsCache {
     // Fetch odds for multiple bookmakers at once
     const booksParam = NBA_BOOKMAKERS.join(',');
     const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&sportsbook=${booksParam}`;
-    const data = await this.fetchWithRateLimit(url, `NBA odds ${eventId}`);
+    const data = await this.fetchApi(url, `NBA odds ${eventId}`);
 
     if (data && data.data && data.data.length > 0) {
       const oddsData = data.data[0];
@@ -202,19 +176,12 @@ class OddsCache {
       new Date(a.date) - new Date(b.date)
     );
 
-    // Only fetch odds for matches in the next 3 days to save API calls
-    const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-    const upcomingEvents = sortedEvents.filter(e => new Date(e.date) <= threeDaysFromNow);
+    // Fetch odds for ALL events (no rate limit)
+    console.log(`[NBA] Refreshing odds for ${sortedEvents.length} events...`);
 
-    console.log(`[NBA] Refreshing odds for ${upcomingEvents.length} upcoming events...`);
-
-    for (const event of upcomingEvents) {
-      if (!this.checkRateLimit()) {
-        console.log('[NBA] Rate limit reached, stopping refresh');
-        break;
-      }
+    for (const event of sortedEvents) {
       await this.fetchNbaOddsForEvent(event.id);
-      await this.sleep(100); // Small delay between requests
+      await this.sleep(50); // Small delay to be nice to the server
     }
 
     this.lastNbaOddsUpdate = new Date();
@@ -224,7 +191,7 @@ class OddsCache {
 
   async fetchFootballEvents(leagueSlug) {
     const url = `${OPTIC_API_BASE}/fixtures?sport=soccer&league=${leagueSlug}&status=unplayed`;
-    const data = await this.fetchWithRateLimit(url, `Football events for ${leagueSlug}`);
+    const data = await this.fetchApi(url, `Football events for ${leagueSlug}`);
 
     if (data && data.data && Array.isArray(data.data)) {
       this.footballEvents[leagueSlug] = data.data.map(event => ({
@@ -247,7 +214,7 @@ class OddsCache {
 
     const booksParam = bookmakers.join(',');
     const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&sportsbook=${booksParam}`;
-    const data = await this.fetchWithRateLimit(url, `Football odds ${eventId}`);
+    const data = await this.fetchApi(url, `Football odds ${eventId}`);
 
     if (data && data.data && data.data.length > 0) {
       const oddsData = data.data[0];
@@ -285,34 +252,26 @@ class OddsCache {
   async refreshFootballOdds() {
     // Fetch events for all leagues
     for (const league of FOOTBALL_LEAGUES) {
-      if (!this.checkRateLimit()) break;
       await this.fetchFootballEvents(league);
-      await this.sleep(100);
+      await this.sleep(50);
     }
 
-    // Collect all upcoming events across leagues
+    // Collect all events across leagues
     const allEvents = [];
     for (const league of FOOTBALL_LEAGUES) {
       const events = this.footballEvents[league] || [];
       allEvents.push(...events.map(e => ({ ...e, league })));
     }
 
-    // Sort by date, prioritize upcoming
+    // Sort by date
     const sortedEvents = allEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // Only fetch odds for matches in the next 3 days
-    const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-    const upcomingEvents = sortedEvents.filter(e => new Date(e.date) <= threeDaysFromNow);
+    console.log(`[Football] Refreshing odds for ${sortedEvents.length} events...`);
 
-    console.log(`[Football] Refreshing odds for ${upcomingEvents.length} upcoming events...`);
-
-    for (const event of upcomingEvents) {
-      if (!this.checkRateLimit()) {
-        console.log('[Football] Rate limit reached, stopping refresh');
-        break;
-      }
+    // Fetch odds for ALL events (no rate limit)
+    for (const event of sortedEvents) {
       await this.fetchFootballOddsForEvent(event.id);
-      await this.sleep(100);
+      await this.sleep(50); // Small delay
     }
 
     this.lastFootballOddsUpdate = new Date();
@@ -327,8 +286,8 @@ class OddsCache {
     }
 
     this.isRefreshing = true;
+    const startApiCalls = this.apiCallCount;
     console.log(`\n========== STARTING FULL REFRESH ==========`);
-    console.log(`[Cache] API calls remaining: ${this.getRemainingCalls()}`);
 
     try {
       // Fetch NBA
@@ -339,7 +298,7 @@ class OddsCache {
       await this.refreshFootballOdds();
 
       console.log(`========== REFRESH COMPLETE ==========`);
-      console.log(`[Cache] API calls used this hour: ${this.apiCallsThisHour}/${MAX_CALLS_PER_HOUR}`);
+      console.log(`[Cache] API calls this refresh: ${this.apiCallCount - startApiCalls}`);
     } catch (error) {
       console.error('[Cache] Refresh error:', error);
       this.lastError = { time: new Date(), message: error.message };
@@ -406,9 +365,7 @@ class OddsCache {
 
   getStatus() {
     return {
-      apiCallsThisHour: this.apiCallsThisHour,
-      maxCallsPerHour: MAX_CALLS_PER_HOUR,
-      remainingCalls: this.getRemainingCalls(),
+      apiCallCount: this.apiCallCount,
       isRefreshing: this.isRefreshing,
       lastError: this.lastError,
       nba: {

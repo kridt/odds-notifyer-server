@@ -312,7 +312,7 @@ app.post('/api/admin/refresh', async (req, res) => {
 
 // ==================== SCHEDULER ====================
 
-const REFRESH_INTERVAL = process.env.REFRESH_INTERVAL || '*/10 * * * *';
+const REFRESH_INTERVAL = process.env.REFRESH_INTERVAL || '*/2 * * * *';
 
 cron.schedule(REFRESH_INTERVAL, () => {
   console.log(`\n[Scheduler] Starting scheduled refresh at ${new Date().toISOString()}`);
@@ -328,12 +328,12 @@ setInterval(emitStatus, 30000);
 httpServer.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
-║         ODDS NOTIFYER SERVER v2.0 (WebSocket)                 ║
+║         ODDS NOTIFYER SERVER v2.0 (WebSocket + OpticOdds)     ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  HTTP Server: port ${PORT}                                        ║
 ║  WebSocket:   enabled                                         ║
-║  API calls:   5000/hour limit                                 ║
-║  Refresh:     Every 10 minutes                                ║
+║  API:         OpticOdds (no rate limits)                      ║
+║  Refresh:     Every 2 minutes                                 ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  REST Endpoints:                                              ║
 ║  GET  /api/status              - Cache status                 ║
