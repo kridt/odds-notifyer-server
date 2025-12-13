@@ -55,6 +55,18 @@ const FOOTBALL_LEAGUES = [
   'argentina_-_primera_division'
 ];
 
+// OpticOdds API only allows max 5 sportsbooks per request
+const MAX_SPORTSBOOKS_PER_REQUEST = 5;
+
+// Helper function to chunk array into batches
+function chunkArray(array, size) {
+  const chunks = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
+
 class OddsCache {
   constructor() {
     // Cache storage
@@ -134,39 +146,51 @@ class OddsCache {
   async fetchNbaOddsForEvent(eventId) {
     const eventOdds = { bookmakers: {}, cachedAt: new Date() };
 
-    // Fetch odds for multiple bookmakers at once
-    const booksParam = NBA_BOOKMAKERS.join(',');
-    const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&sportsbook=${booksParam}`;
-    const data = await this.fetchApi(url, `NBA odds ${eventId}`);
+    // OpticOdds allows max 5 sportsbooks per request - batch them
+    const bookmakerBatches = chunkArray(NBA_BOOKMAKERS, MAX_SPORTSBOOKS_PER_REQUEST);
 
-    if (data && data.data && data.data.length > 0) {
-      const oddsData = data.data[0];
+    for (const batch of bookmakerBatches) {
+      const booksParam = batch.join(',');
+      const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&sportsbook=${booksParam}`;
+      const data = await this.fetchApi(url, `NBA odds ${eventId} (${batch.length} books)`);
 
-      // Process odds by sportsbook
-      if (oddsData.odds) {
-        for (const odd of oddsData.odds) {
-          const book = odd.sportsbook;
-          if (!eventOdds.bookmakers[book]) {
-            eventOdds.bookmakers[book] = { markets: {} };
+      if (data && data.data && data.data.length > 0) {
+        const oddsData = data.data[0];
+
+        // Process odds by sportsbook
+        if (oddsData.odds) {
+          for (const odd of oddsData.odds) {
+            const book = odd.sportsbook;
+            if (!eventOdds.bookmakers[book]) {
+              eventOdds.bookmakers[book] = { markets: {} };
+            }
+
+            const market = odd.market;
+            if (!eventOdds.bookmakers[book].markets[market]) {
+              eventOdds.bookmakers[book].markets[market] = [];
+            }
+
+            eventOdds.bookmakers[book].markets[market].push({
+              name: odd.name,
+              price: odd.price,
+              points: odd.points,
+              is_main: odd.is_main
+            });
           }
+        }
 
-          const market = odd.market;
-          if (!eventOdds.bookmakers[book].markets[market]) {
-            eventOdds.bookmakers[book].markets[market] = [];
-          }
-
-          eventOdds.bookmakers[book].markets[market].push({
-            name: odd.name,
-            price: odd.price,
-            points: odd.points,
-            is_main: odd.is_main
-          });
+        // Set event metadata from first successful response
+        if (!eventOdds.home && oddsData.home_team) {
+          eventOdds.home = oddsData.home_team;
+          eventOdds.away = oddsData.away_team;
+          eventOdds.date = oddsData.start_date;
         }
       }
 
-      eventOdds.home = oddsData.home_team;
-      eventOdds.away = oddsData.away_team;
-      eventOdds.date = oddsData.start_date;
+      // Small delay between batch requests
+      if (bookmakerBatches.indexOf(batch) < bookmakerBatches.length - 1) {
+        await this.sleep(25);
+      }
     }
 
     this.nbaOdds[eventId] = eventOdds;
@@ -219,37 +243,50 @@ class OddsCache {
   async fetchFootballOddsForEvent(eventId, bookmakers = FOOTBALL_BOOKMAKERS) {
     const eventOdds = { bookmakers: {}, cachedAt: new Date() };
 
-    const booksParam = bookmakers.join(',');
-    const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&sportsbook=${booksParam}`;
-    const data = await this.fetchApi(url, `Football odds ${eventId}`);
+    // OpticOdds allows max 5 sportsbooks per request - batch them
+    const bookmakerBatches = chunkArray(bookmakers, MAX_SPORTSBOOKS_PER_REQUEST);
 
-    if (data && data.data && data.data.length > 0) {
-      const oddsData = data.data[0];
+    for (const batch of bookmakerBatches) {
+      const booksParam = batch.join(',');
+      const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&sportsbook=${booksParam}`;
+      const data = await this.fetchApi(url, `Football odds ${eventId} (${batch.length} books)`);
 
-      if (oddsData.odds) {
-        for (const odd of oddsData.odds) {
-          const book = odd.sportsbook;
-          if (!eventOdds.bookmakers[book]) {
-            eventOdds.bookmakers[book] = { markets: {} };
+      if (data && data.data && data.data.length > 0) {
+        const oddsData = data.data[0];
+
+        if (oddsData.odds) {
+          for (const odd of oddsData.odds) {
+            const book = odd.sportsbook;
+            if (!eventOdds.bookmakers[book]) {
+              eventOdds.bookmakers[book] = { markets: {} };
+            }
+
+            const market = odd.market;
+            if (!eventOdds.bookmakers[book].markets[market]) {
+              eventOdds.bookmakers[book].markets[market] = [];
+            }
+
+            eventOdds.bookmakers[book].markets[market].push({
+              name: odd.name,
+              price: odd.price,
+              points: odd.points,
+              is_main: odd.is_main
+            });
           }
+        }
 
-          const market = odd.market;
-          if (!eventOdds.bookmakers[book].markets[market]) {
-            eventOdds.bookmakers[book].markets[market] = [];
-          }
-
-          eventOdds.bookmakers[book].markets[market].push({
-            name: odd.name,
-            price: odd.price,
-            points: odd.points,
-            is_main: odd.is_main
-          });
+        // Set event metadata from first successful response
+        if (!eventOdds.home && oddsData.home_team) {
+          eventOdds.home = oddsData.home_team;
+          eventOdds.away = oddsData.away_team;
+          eventOdds.date = oddsData.start_date;
         }
       }
 
-      eventOdds.home = oddsData.home_team;
-      eventOdds.away = oddsData.away_team;
-      eventOdds.date = oddsData.start_date;
+      // Small delay between batch requests
+      if (bookmakerBatches.indexOf(batch) < bookmakerBatches.length - 1) {
+        await this.sleep(25);
+      }
     }
 
     this.footballOdds[eventId] = eventOdds;
