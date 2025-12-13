@@ -11,7 +11,7 @@ services:
         value: production
       - key: PORT
         value: 3002
-      - key: ODDS_API_KEY
+      - key: OPTIC_ODDS_API_KEY
         sync: false
       - key: MAX_CALLS_PER_HOUR
         value: 5000
