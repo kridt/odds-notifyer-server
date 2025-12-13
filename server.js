@@ -310,6 +310,17 @@ app.post('/api/admin/refresh', async (req, res) => {
   }
 });
 
+// Get available leagues from OpticOdds (for debugging league IDs)
+app.get('/api/leagues/:sport', async (req, res) => {
+  const { sport } = req.params;
+  try {
+    const leagues = await oddsCache.fetchAvailableLeagues(sport);
+    res.json({ sport, count: leagues.length, leagues });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== SCHEDULER ====================
 
 const REFRESH_INTERVAL = process.env.REFRESH_INTERVAL || '*/2 * * * *';

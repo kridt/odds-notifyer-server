@@ -387,6 +387,16 @@ class OddsCache {
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
+
+  // Fetch available leagues from OpticOdds (for debugging)
+  async fetchAvailableLeagues(sport = 'soccer') {
+    const url = `${OPTIC_API_BASE}/leagues/active?sport=${sport}`;
+    const data = await this.fetchApi(url, `Available ${sport} leagues`);
+    if (data && data.data) {
+      return data.data;
+    }
+    return [];
+  }
 }
 
 // Singleton instance
