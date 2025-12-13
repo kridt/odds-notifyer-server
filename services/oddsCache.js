@@ -16,36 +16,43 @@ const FOOTBALL_BOOKMAKERS = [
   'betonline', 'betrivers', 'bovada', 'unibet', 'pointsbet'
 ];
 
-// Football leagues to track (OpticOdds league slugs)
+// Football leagues to track (OpticOdds league IDs - format: country_-_league)
 const FOOTBALL_LEAGUES = [
-  // Top 5 + second divisions
-  'epl',
-  'efl_championship',
-  'fa_cup',
-  'la_liga',
-  'la_liga_2',
-  'bundesliga',
-  '2_bundesliga',
-  'serie_a',
-  'serie_b',
-  'ligue_1',
-  'ligue_2',
-  // European leagues
-  'eredivisie',
-  'primeira_liga',
-  'jupiler_pro_league',
-  'scottish_premiership',
-  'superliga',
-  'austrian_bundesliga',
-  'super_league_greece',
+  // England
+  'england_-_premier_league',
+  'england_-_championship',
+  'england_-_fa_cup',
+  'england_-_efl_cup',
+  'england_-_league_1',
+  'england_-_league_2',
+  // Spain
+  'spain_-_la_liga',
+  'spain_-_la_liga_2',
+  // Germany
+  'germany_-_bundesliga',
+  'germany_-_bundesliga_2',
+  // Italy
+  'italy_-_serie_a',
+  'italy_-_serie_b',
+  // France
+  'france_-_ligue_1',
+  'france_-_ligue_2',
+  // Other European leagues
+  'netherlands_-_eredivisie',
+  'portugal_-_primeira_liga',
+  'belgium_-_jupiler_pro_league',
+  'scotland_-_premiership',
+  'denmark_-_superliga',
+  'austria_-_bundesliga',
+  'greece_-_super_league',
   // UEFA competitions
-  'champions_league',
-  'europa_league',
-  'europa_conference_league',
+  'uefa_-_champions_league',
+  'uefa_-_europa_league',
+  'uefa_-_conference_league',
   // Other
-  'saudi_pro_league',
-  'brasileirao',
-  'liga_profesional'
+  'saudi_arabia_-_pro_league',
+  'brazil_-_serie_a',
+  'argentina_-_primera_division'
 ];
 
 class OddsCache {
