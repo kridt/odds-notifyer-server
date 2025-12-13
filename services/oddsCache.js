@@ -150,8 +150,9 @@ class OddsCache {
     const bookmakerBatches = chunkArray(NBA_BOOKMAKERS, MAX_SPORTSBOOKS_PER_REQUEST);
 
     for (const batch of bookmakerBatches) {
-      const booksParam = batch.join(',');
-      const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&sportsbook=${booksParam}`;
+      // OpticOdds requires repeated sportsbook params, not comma-separated
+      const booksParams = batch.map(b => `sportsbook=${b}`).join('&');
+      const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&${booksParams}`;
       const data = await this.fetchApi(url, `NBA odds ${eventId} (${batch.length} books)`);
 
       if (data && data.data && data.data.length > 0) {
@@ -247,8 +248,9 @@ class OddsCache {
     const bookmakerBatches = chunkArray(bookmakers, MAX_SPORTSBOOKS_PER_REQUEST);
 
     for (const batch of bookmakerBatches) {
-      const booksParam = batch.join(',');
-      const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&sportsbook=${booksParam}`;
+      // OpticOdds requires repeated sportsbook params, not comma-separated
+      const booksParams = batch.map(b => `sportsbook=${b}`).join('&');
+      const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&${booksParams}`;
       const data = await this.fetchApi(url, `Football odds ${eventId} (${batch.length} books)`);
 
       if (data && data.data && data.data.length > 0) {
