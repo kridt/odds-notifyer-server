@@ -123,15 +123,17 @@ class OddsCache {
   // ==================== NBA FETCHING ====================
 
   async fetchNbaEvents() {
-    const url = `${OPTIC_API_BASE}/fixtures/active?league=nba`;
+    // Use same endpoint format as frontend: /fixtures?sport=basketball&league=nba&status=unplayed
+    // This returns fixture IDs in format like "20251215NBA5AA48D4F" which the frontend expects
+    const url = `${OPTIC_API_BASE}/fixtures?sport=basketball&league=nba&status=unplayed`;
     const data = await this.fetchApi(url, 'NBA events');
 
     if (data && data.data && Array.isArray(data.data)) {
       // Transform to consistent format
       this.nbaEvents = data.data.map(event => ({
         id: event.id,
-        home: event.home_team,
-        away: event.away_team,
+        home: event.home_team_display || event.home_team,
+        away: event.away_team_display || event.away_team,
         date: event.start_date,
         league: 'nba',
         status: event.status
