@@ -11,8 +11,12 @@ services:
         value: production
       - key: PORT
         value: 3002
-      - key: OPTIC_ODDS_API_KEY
+      - key: ODDS_API_KEY
         sync: false
+      - key: ODDS_API_BASE
+        value: https://api2.odds-api.io/v3
+      - key: MAX_CALLS_PER_HOUR
+        value: 5000
       - key: REFRESH_INTERVAL
         value: "*/2 * * * *"
     healthCheckPath: /health

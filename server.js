@@ -310,20 +310,9 @@ app.post('/api/admin/refresh', async (req, res) => {
   }
 });
 
-// Get available leagues from OpticOdds (for debugging league IDs)
-app.get('/api/leagues/:sport', async (req, res) => {
-  const { sport } = req.params;
-  try {
-    const leagues = await oddsCache.fetchAvailableLeagues(sport);
-    res.json({ sport, count: leagues.length, leagues });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // ==================== SCHEDULER ====================
 
-const REFRESH_INTERVAL = process.env.REFRESH_INTERVAL || '*/2 * * * *';
+const REFRESH_INTERVAL = process.env.REFRESH_INTERVAL || '*/10 * * * *';
 
 cron.schedule(REFRESH_INTERVAL, () => {
   console.log(`\n[Scheduler] Starting scheduled refresh at ${new Date().toISOString()}`);
@@ -339,12 +328,12 @@ setInterval(emitStatus, 30000);
 httpServer.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
-║         ODDS NOTIFYER SERVER v2.0 (WebSocket + OpticOdds)     ║
+║         ODDS NOTIFYER SERVER v2.0 (WebSocket)                 ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  HTTP Server: port ${PORT}                                        ║
 ║  WebSocket:   enabled                                         ║
-║  API:         OpticOdds (no rate limits)                      ║
-║  Refresh:     Every 2 minutes                                 ║
+║  API calls:   5000/hour limit                                 ║
+║  Refresh:     Every 10 minutes                                ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  REST Endpoints:                                              ║
 ║  GET  /api/status              - Cache status                 ║

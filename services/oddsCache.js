@@ -1,82 +1,64 @@
 // services/oddsCache.js
-// Centralized odds caching service - OPTICODDS API (no rate limits)
+// Centralized odds caching service with rate limiting
 
-const OPTIC_API_KEY = process.env.OPTIC_ODDS_API_KEY || '';
-const OPTIC_API_BASE = 'https://api.opticodds.com/api/v3';
+const ODDS_API_KEY = process.env.ODDS_API_KEY || '811e5fb0efa75d2b92e800cb55b60b30f62af8c21da06c4b2952eb516bee0a2e';
+const ODDS_API_BASE = process.env.ODDS_API_BASE || 'https://api2.odds-api.io/v3';
+const MAX_CALLS_PER_HOUR = parseInt(process.env.MAX_CALLS_PER_HOUR) || 5000;
 
-// Bookmakers configuration
+// Bookmakers configuration (Sporttrade removed - returns 400 errors)
 const NBA_BOOKMAKERS = [
-  'draftkings', 'fanduel', 'betmgm', 'caesars', 'pointsbet',
-  'bet365', 'pinnacle', 'bovada', 'betonline', 'betrivers',
-  'unibet', 'wynnbet', 'superbook', 'barstool', 'hard_rock'
+  'Kambi', 'Bet365', 'DraftKings', 'Pinnacle', 'BetMGM', 'Caesars', 'PrizePicks', 'FanDuel',
+  'BetOnline.ag', 'BetPARX', 'BetRivers', 'Bovada', 'Fanatics', 'Fliff', 'Superbet', 'Underdog', 'Bally Bet'
 ];
 
 const FOOTBALL_BOOKMAKERS = [
-  'pinnacle', 'bet365', 'draftkings', 'fanduel', 'betmgm', 'caesars',
-  'betonline', 'betrivers', 'bovada', 'unibet', 'pointsbet'
+  'Pinnacle', 'Bet365', 'Kambi', 'DraftKings', 'FanDuel', 'BetMGM', 'Caesars',
+  'BetOnline.ag', 'BetRivers', 'Bovada', 'Fanatics', 'Superbet', 'Bally Bet'
 ];
 
-// Football leagues to track (OpticOdds league IDs - format: country_-_league)
+// Football leagues to track (matches frontend config)
 const FOOTBALL_LEAGUES = [
-  // England
-  'england_-_premier_league',
-  'england_-_championship',
-  'england_-_fa_cup',
-  'england_-_efl_cup',
-  'england_-_league_1',
-  'england_-_league_2',
-  // Spain
-  'spain_-_la_liga',
-  'spain_-_la_liga_2',
-  // Germany
-  'germany_-_bundesliga',
-  'germany_-_bundesliga_2',
-  // Italy
-  'italy_-_serie_a',
-  'italy_-_serie_b',
-  // France
-  'france_-_ligue_1',
-  'france_-_ligue_2',
-  // Other European leagues
-  'netherlands_-_eredivisie',
-  'portugal_-_primeira_liga',
-  'belgium_-_jupiler_pro_league',
-  'scotland_-_premiership',
-  'denmark_-_superliga',
-  'austria_-_bundesliga',
-  'greece_-_super_league',
+  // Top 5 + second divisions
+  'england-premier-league',
+  'england-championship',
+  'england-fa-cup',
+  'spain-laliga',
+  'spain-laliga-2',
+  'germany-bundesliga',
+  'germany-2-bundesliga',
+  'italy-serie-a',
+  'italy-serie-b',
+  'france-ligue-1',
+  'france-ligue-2',
+  // European leagues
+  'netherlands-eredivisie',
+  'portugal-liga-portugal',
+  'belgium-pro-league',
+  'scotland-premiership',
+  'denmark-superliga',
+  'austria-bundesliga',
+  'greece-super-league',
   // UEFA competitions
-  'uefa_-_champions_league',
-  'uefa_-_europa_league',
-  'uefa_-_conference_league',
+  'international-clubs-uefa-champions-league',
+  'international-clubs-uefa-europa-league',
+  'international-clubs-uefa-conference-league',
   // Other
-  'saudi_arabia_-_pro_league',
-  'brazil_-_serie_a',
-  'argentina_-_primera_division'
+  'saudi-arabia-saudi-pro-league',
+  'brazil-brasileiro-serie-a',
+  'argentina-liga-profesional'
 ];
-
-// OpticOdds API only allows max 5 sportsbooks per request
-const MAX_SPORTSBOOKS_PER_REQUEST = 5;
-
-// Helper function to chunk array into batches
-function chunkArray(array, size) {
-  const chunks = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
-}
 
 class OddsCache {
   constructor() {
     // Cache storage
     this.nbaEvents = [];
-    this.nbaOdds = {}; // { eventId: { bookmakers: {...} } }
+    this.nbaOdds = {}; // { eventId: { bookmaker: oddsData } }
     this.footballEvents = {}; // { leagueSlug: events[] }
-    this.footballOdds = {}; // { eventId: { bookmakers: {...} } }
+    this.footballOdds = {}; // { eventId: { bookmaker: oddsData } }
 
-    // API call counter (for logging only)
-    this.apiCallCount = 0;
+    // Rate limiting
+    this.apiCallsThisHour = 0;
+    this.hourStartTime = Date.now();
 
     // Last update timestamps
     this.lastNbaEventsUpdate = null;
@@ -89,29 +71,42 @@ class OddsCache {
     this.lastError = null;
   }
 
-  // Generic fetch - no rate limiting for OpticOdds
-  async fetchApi(url, description = '') {
-    if (!OPTIC_API_KEY) {
-      console.error('[API Error] OPTIC_ODDS_API_KEY not configured');
-      this.lastError = { time: new Date(), message: 'API key not configured' };
+  // Check and reset hourly rate limit
+  checkRateLimit() {
+    const now = Date.now();
+    const hourMs = 60 * 60 * 1000;
+
+    if (now - this.hourStartTime >= hourMs) {
+      console.log(`[RateLimit] Resetting hourly counter. Used ${this.apiCallsThisHour} calls last hour.`);
+      this.apiCallsThisHour = 0;
+      this.hourStartTime = now;
+    }
+
+    return this.apiCallsThisHour < MAX_CALLS_PER_HOUR;
+  }
+
+  getRemainingCalls() {
+    this.checkRateLimit();
+    return MAX_CALLS_PER_HOUR - this.apiCallsThisHour;
+  }
+
+  // Generic fetch with rate limiting
+  async fetchWithRateLimit(url, description = '') {
+    if (!this.checkRateLimit()) {
+      console.log(`[RateLimit] Limit reached (${this.apiCallsThisHour}/${MAX_CALLS_PER_HOUR}). Skipping: ${description}`);
       return null;
     }
 
     try {
-      this.apiCallCount++;
-      const response = await fetch(url, {
-        headers: {
-          'x-api-key': OPTIC_API_KEY,
-          'Content-Type': 'application/json'
-        }
-      });
+      this.apiCallsThisHour++;
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log(`[API #${this.apiCallCount}] ${description}`);
+      console.log(`[API ${this.apiCallsThisHour}/${MAX_CALLS_PER_HOUR}] ${description}`);
       return data;
     } catch (error) {
       console.error(`[API Error] ${description}: ${error.message}`);
@@ -123,77 +118,40 @@ class OddsCache {
   // ==================== NBA FETCHING ====================
 
   async fetchNbaEvents() {
-    // Use same endpoint format as frontend: /fixtures?sport=basketball&league=nba&status=unplayed
-    // This returns fixture IDs in format like "20251215NBA5AA48D4F" which the frontend expects
-    const url = `${OPTIC_API_BASE}/fixtures?sport=basketball&league=nba&status=unplayed`;
-    const data = await this.fetchApi(url, 'NBA events');
+    // Format date in RFC3339 format (required by API)
+    const toDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const toDateStr = toDate.toISOString(); // e.g., 2025-12-16T23:59:59.999Z
 
-    if (data && data.data && Array.isArray(data.data)) {
-      // Transform to consistent format
-      this.nbaEvents = data.data.map(event => ({
-        id: event.id,
-        home: event.home_team_display || event.home_team,
-        away: event.away_team_display || event.away_team,
-        date: event.start_date,
-        league: 'nba',
-        status: event.status
-      }));
+    const url = `${ODDS_API_BASE}/events?apiKey=${ODDS_API_KEY}&sport=basketball&league=usa-nba&status=pending&to=${toDateStr}`;
+    const data = await this.fetchWithRateLimit(url, 'NBA events');
+
+    if (data && Array.isArray(data)) {
+      this.nbaEvents = data;
       this.lastNbaEventsUpdate = new Date();
-      console.log(`[NBA] Cached ${this.nbaEvents.length} events`);
+      console.log(`[NBA] Cached ${data.length} events`);
     }
 
     return this.nbaEvents;
   }
 
   async fetchNbaOddsForEvent(eventId) {
+    // Fetch each bookmaker individually to avoid API limits
     const eventOdds = { bookmakers: {}, cachedAt: new Date() };
 
-    // OpticOdds allows max 5 sportsbooks per request - batch them
-    const bookmakerBatches = chunkArray(NBA_BOOKMAKERS, MAX_SPORTSBOOKS_PER_REQUEST);
+    for (const bookmaker of NBA_BOOKMAKERS) {
+      if (!this.checkRateLimit()) break;
 
-    for (const batch of bookmakerBatches) {
-      // OpticOdds requires repeated sportsbook params, not comma-separated
-      const booksParams = batch.map(b => `sportsbook=${b}`).join('&');
-      const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&${booksParams}`;
-      const data = await this.fetchApi(url, `NBA odds ${eventId} (${batch.length} books)`);
+      const url = `${ODDS_API_BASE}/odds?apiKey=${ODDS_API_KEY}&eventId=${eventId}&bookmakers=${bookmaker}`;
+      const data = await this.fetchWithRateLimit(url, `NBA odds ${eventId} - ${bookmaker}`);
 
-      if (data && data.data && data.data.length > 0) {
-        const oddsData = data.data[0];
-
-        // Process odds by sportsbook
-        if (oddsData.odds) {
-          for (const odd of oddsData.odds) {
-            const book = odd.sportsbook;
-            if (!eventOdds.bookmakers[book]) {
-              eventOdds.bookmakers[book] = { markets: {} };
-            }
-
-            const market = odd.market;
-            if (!eventOdds.bookmakers[book].markets[market]) {
-              eventOdds.bookmakers[book].markets[market] = [];
-            }
-
-            eventOdds.bookmakers[book].markets[market].push({
-              name: odd.name,
-              price: odd.price,
-              points: odd.points,
-              is_main: odd.is_main
-            });
-          }
-        }
-
-        // Set event metadata from first successful response
-        if (!eventOdds.home && oddsData.home_team) {
-          eventOdds.home = oddsData.home_team;
-          eventOdds.away = oddsData.away_team;
-          eventOdds.date = oddsData.start_date;
-        }
+      if (data && data.bookmakers && data.bookmakers[bookmaker]) {
+        eventOdds.bookmakers[bookmaker] = data.bookmakers[bookmaker];
+        eventOdds.home = data.home;
+        eventOdds.away = data.away;
+        eventOdds.date = data.date;
       }
 
-      // Small delay between batch requests
-      if (bookmakerBatches.indexOf(batch) < bookmakerBatches.length - 1) {
-        await this.sleep(25);
-      }
+      await this.sleep(50); // Small delay between requests
     }
 
     this.nbaOdds[eventId] = eventOdds;
@@ -210,12 +168,19 @@ class OddsCache {
       new Date(a.date) - new Date(b.date)
     );
 
-    // Fetch odds for ALL events (no rate limit)
-    console.log(`[NBA] Refreshing odds for ${sortedEvents.length} events...`);
+    // Only fetch odds for matches in the next 3 days to save API calls
+    const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const upcomingEvents = sortedEvents.filter(e => new Date(e.date) <= threeDaysFromNow);
 
-    for (const event of sortedEvents) {
+    console.log(`[NBA] Refreshing odds for ${upcomingEvents.length} upcoming events...`);
+
+    for (const event of upcomingEvents) {
+      if (!this.checkRateLimit()) {
+        console.log('[NBA] Rate limit reached, stopping refresh');
+        break;
+      }
       await this.fetchNbaOddsForEvent(event.id);
-      await this.sleep(50); // Small delay to be nice to the server
+      await this.sleep(100); // Small delay between requests
     }
 
     this.lastNbaOddsUpdate = new Date();
@@ -224,73 +189,41 @@ class OddsCache {
   // ==================== FOOTBALL FETCHING ====================
 
   async fetchFootballEvents(leagueSlug) {
-    const url = `${OPTIC_API_BASE}/fixtures?sport=soccer&league=${leagueSlug}&status=unplayed`;
-    const data = await this.fetchApi(url, `Football events for ${leagueSlug}`);
+    // Format date in RFC3339 format (required by API)
+    const toDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const toDateStr = toDate.toISOString(); // e.g., 2025-12-16T23:59:59.999Z
 
-    if (data && data.data && Array.isArray(data.data)) {
-      this.footballEvents[leagueSlug] = data.data.map(event => ({
-        id: event.id,
-        home: event.home_team,
-        away: event.away_team,
-        date: event.start_date,
-        league: leagueSlug,
-        status: event.status
-      }));
+    const url = `${ODDS_API_BASE}/events?apiKey=${ODDS_API_KEY}&sport=football&league=${leagueSlug}&status=pending&to=${toDateStr}`;
+    const data = await this.fetchWithRateLimit(url, `Football events for ${leagueSlug}`);
+
+    if (data && Array.isArray(data)) {
+      this.footballEvents[leagueSlug] = data;
       this.lastFootballEventsUpdate[leagueSlug] = new Date();
-      console.log(`[Football] Cached ${this.footballEvents[leagueSlug].length} events for ${leagueSlug}`);
+      console.log(`[Football] Cached ${data.length} events for ${leagueSlug}`);
     }
 
     return this.footballEvents[leagueSlug] || [];
   }
 
   async fetchFootballOddsForEvent(eventId, bookmakers = FOOTBALL_BOOKMAKERS) {
+    // Fetch one bookmaker at a time to handle the API structure
     const eventOdds = { bookmakers: {}, cachedAt: new Date() };
 
-    // OpticOdds allows max 5 sportsbooks per request - batch them
-    const bookmakerBatches = chunkArray(bookmakers, MAX_SPORTSBOOKS_PER_REQUEST);
+    for (const bookmaker of bookmakers) {
+      if (!this.checkRateLimit()) break;
 
-    for (const batch of bookmakerBatches) {
-      // OpticOdds requires repeated sportsbook params, not comma-separated
-      const booksParams = batch.map(b => `sportsbook=${b}`).join('&');
-      const url = `${OPTIC_API_BASE}/fixtures/odds?fixture_id=${eventId}&${booksParams}`;
-      const data = await this.fetchApi(url, `Football odds ${eventId} (${batch.length} books)`);
+      const url = `${ODDS_API_BASE}/odds?apiKey=${ODDS_API_KEY}&eventId=${eventId}&bookmakers=${bookmaker}`;
+      const data = await this.fetchWithRateLimit(url, `Football odds ${eventId} - ${bookmaker}`);
 
-      if (data && data.data && data.data.length > 0) {
-        const oddsData = data.data[0];
-
-        if (oddsData.odds) {
-          for (const odd of oddsData.odds) {
-            const book = odd.sportsbook;
-            if (!eventOdds.bookmakers[book]) {
-              eventOdds.bookmakers[book] = { markets: {} };
-            }
-
-            const market = odd.market;
-            if (!eventOdds.bookmakers[book].markets[market]) {
-              eventOdds.bookmakers[book].markets[market] = [];
-            }
-
-            eventOdds.bookmakers[book].markets[market].push({
-              name: odd.name,
-              price: odd.price,
-              points: odd.points,
-              is_main: odd.is_main
-            });
-          }
-        }
-
-        // Set event metadata from first successful response
-        if (!eventOdds.home && oddsData.home_team) {
-          eventOdds.home = oddsData.home_team;
-          eventOdds.away = oddsData.away_team;
-          eventOdds.date = oddsData.start_date;
-        }
+      if (data && data.bookmakers && data.bookmakers[bookmaker]) {
+        eventOdds.bookmakers[bookmaker] = data.bookmakers[bookmaker];
+        eventOdds.urls = { ...eventOdds.urls, ...data.urls };
+        eventOdds.home = data.home;
+        eventOdds.away = data.away;
+        eventOdds.date = data.date;
       }
 
-      // Small delay between batch requests
-      if (bookmakerBatches.indexOf(batch) < bookmakerBatches.length - 1) {
-        await this.sleep(25);
-      }
+      await this.sleep(50);
     }
 
     this.footballOdds[eventId] = eventOdds;
@@ -300,26 +233,34 @@ class OddsCache {
   async refreshFootballOdds() {
     // Fetch events for all leagues
     for (const league of FOOTBALL_LEAGUES) {
+      if (!this.checkRateLimit()) break;
       await this.fetchFootballEvents(league);
-      await this.sleep(50);
+      await this.sleep(100);
     }
 
-    // Collect all events across leagues
+    // Collect all upcoming events across leagues
     const allEvents = [];
     for (const league of FOOTBALL_LEAGUES) {
       const events = this.footballEvents[league] || [];
       allEvents.push(...events.map(e => ({ ...e, league })));
     }
 
-    // Sort by date
+    // Sort by date, prioritize upcoming
     const sortedEvents = allEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    console.log(`[Football] Refreshing odds for ${sortedEvents.length} events...`);
+    // Only fetch odds for matches in the next 3 days
+    const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const upcomingEvents = sortedEvents.filter(e => new Date(e.date) <= threeDaysFromNow);
 
-    // Fetch odds for ALL events (no rate limit)
-    for (const event of sortedEvents) {
+    console.log(`[Football] Refreshing odds for ${upcomingEvents.length} upcoming events...`);
+
+    for (const event of upcomingEvents) {
+      if (!this.checkRateLimit()) {
+        console.log('[Football] Rate limit reached, stopping refresh');
+        break;
+      }
       await this.fetchFootballOddsForEvent(event.id);
-      await this.sleep(50); // Small delay
+      await this.sleep(100);
     }
 
     this.lastFootballOddsUpdate = new Date();
@@ -334,8 +275,8 @@ class OddsCache {
     }
 
     this.isRefreshing = true;
-    const startApiCalls = this.apiCallCount;
     console.log(`\n========== STARTING FULL REFRESH ==========`);
+    console.log(`[Cache] API calls remaining: ${this.getRemainingCalls()}`);
 
     try {
       // Fetch NBA
@@ -346,7 +287,7 @@ class OddsCache {
       await this.refreshFootballOdds();
 
       console.log(`========== REFRESH COMPLETE ==========`);
-      console.log(`[Cache] API calls this refresh: ${this.apiCallCount - startApiCalls}`);
+      console.log(`[Cache] API calls used this hour: ${this.apiCallsThisHour}/${MAX_CALLS_PER_HOUR}`);
     } catch (error) {
       console.error('[Cache] Refresh error:', error);
       this.lastError = { time: new Date(), message: error.message };
@@ -413,7 +354,9 @@ class OddsCache {
 
   getStatus() {
     return {
-      apiCallCount: this.apiCallCount,
+      apiCallsThisHour: this.apiCallsThisHour,
+      maxCallsPerHour: MAX_CALLS_PER_HOUR,
+      remainingCalls: this.getRemainingCalls(),
       isRefreshing: this.isRefreshing,
       lastError: this.lastError,
       nba: {
@@ -434,16 +377,6 @@ class OddsCache {
   // Utility
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  // Fetch available leagues from OpticOdds (for debugging)
-  async fetchAvailableLeagues(sport = 'soccer') {
-    const url = `${OPTIC_API_BASE}/leagues/active?sport=${sport}`;
-    const data = await this.fetchApi(url, `Available ${sport} leagues`);
-    if (data && data.data) {
-      return data.data;
-    }
-    return [];
   }
 }
 
